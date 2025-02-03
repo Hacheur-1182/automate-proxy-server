@@ -1,36 +1,67 @@
 #!/bin/bash
 
-# Mettre à jour le système
-sudo apt update && sudo apt upgrade -y
+# Vérification des privilèges root
+if [ "$(id -u)" -ne 0 ]; then
+    echo "❌ Ce script doit être exécuté en tant que root !"
+    exit 1
+fi
 
-# Installer Shadowsocks-libev
-sudo apt install shadowsocks-libev -y
+# Mise à jour du système
+echo "🔄 Mise à jour du système..."
+apt update && apt upgrade -y
 
-# Générer un mot de passe sécurisé
-# PASSWORD=$(openssl rand -base64 16)
-PASSWORD=$(qwertyuiop)
+# Installation de Shadowsocks et vnstat (surveillance du trafic)
+echo "🔧 Installation de Shadowsocks-libev et vnstat..."
+apt install shadowsocks-libev vnstat -y
 
-# Créer et configurer Shadowsocks
-cat <<EOF | sudo tee /etc/shadowsocks-libev/config.json
-{
-    "server": "0.0.0.0",
-    "server_port": 8388,
-    "password": "$PASSWORD",
-    "method": "aes-256-gcm",
-    "timeout": 300
-}
-EOF
+# Demande à l'utilisateur de choisir un port
+read -p "🛠️ Entrez le port que vous voulez utiliser (par défaut: 8388) : " PORT
+PORT=${PORT:-8388}
 
-# Redémarrer et activer le service Shadowsocks
-sudo systemctl restart shadowsocks-libev
-sudo systemctl enable shadowsocks-libev
+# Demande à l'utilisateur le nombre d'utilisateurs à créer
+read -p "👥 Combien d’utilisateurs voulez-vous créer ? (par défaut: 1) : " USER_COUNT
+USER_COUNT=${USER_COUNT:-1}
 
-# Ouvrir le port sur le pare-feu Google Cloud
-# gcloud compute firewall-rules create shadowsocks-rule --allow tcp:8388
+# Génération de la configuration avec plusieurs utilisateurs
+CONFIG="/etc/shadowsocks-libev/config.json"
+echo "{" > $CONFIG
+echo '    "server": "0.0.0.0",' >> $CONFIG
+echo '    "mode": "tcp_and_udp",' >> $CONFIG
+echo '    "timeout": 300,' >> $CONFIG
+echo '    "method": "aes-256-gcm",' >> $CONFIG
+echo '    "fast_open": true,' >> $CONFIG
+echo '    "reuse_port": true,' >> $CONFIG
+echo '    "no_delay": true,' >> $CONFIG
+echo '    "users": {' >> $CONFIG
 
-# Afficher les informations du serveur
+for ((i=1; i<=USER_COUNT; i++))
+do
+    PASSWORD=$(openssl rand -base64 12)
+    echo "🆕 Utilisateur $i - Mot de passe : $PASSWORD"
+    if [ $i -eq $USER_COUNT ]; then
+        echo "        \"user$i\": {\"password\": \"$PASSWORD\", \"port\": $PORT}" >> $CONFIG
+    else
+        echo "        \"user$i\": {\"password\": \"$PASSWORD\", \"port\": $PORT}," >> $CONFIG
+    fi
+done
+
+echo '    }' >> $CONFIG
+echo "}" >> $CONFIG
+
+# Redémarrer Shadowsocks
+echo "🔄 Redémarrage de Shadowsocks..."
+systemctl restart shadowsocks-libev
+systemctl enable shadowsocks-libev
+
+# Ouvrir le port sur Google Cloud
+echo "🌍 Configuration du pare-feu Google Cloud..."
+gcloud compute firewall-rules create shadowsocks-rule --allow tcp:$PORT,udp:$PORT
+
+# Affichage des informations
+IP=$(curl -s ifconfig.me)
 echo "✅ Installation terminée !"
-echo "🔹 Adresse IP : $(curl -s ifconfig.me)"
-echo "🔹 Port : 8388"
-echo "🔹 Mot de passe : $PASSWORD"
-echo "🔹 Chiffrement : aes-256-gcm"
+echo "🔹 Adresse IP : $IP"
+echo "🔹 Port : $PORT"
+echo "🔹 Méthode de chiffrement : aes-256-gcm"
+echo "📊 Surveillez le trafic avec : vnstat -l"
+
