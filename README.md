@@ -7,6 +7,6 @@ wget https://raw.githubusercontent.com/Hacheur-1182/automate-proxy-server/master
 chmod +x install.sh
 sudo ./install.sh
 
-# Ouvrir le port sur le pare-feu Google Cloud
+## Ouvrir le port sur le pare-feu Google Cloud
 coller cette commande dans le terminal de votre console google
 gcloud compute firewall-rules create shadowsocks-rule --allow tcp:8388
